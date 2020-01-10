@@ -1,0 +1,141 @@
+//----------------------------------------------
+// Displays world coordinates of selected vertex (or vertices) on the HUD
+//----------------------------------------------
+
+// define command for HUD to execute; return type string for pretty formatting
+global proc	string	aweVtxPos () {													
+
+	// this will be the return value, default empty if nothing is selected
+	float $position[3];																		
+	string $returnPos = "None Selected";
+	// make sure vertex selection mode is on
+	if (`selectType -q -v`) {
+	
+		string $shortX = "default";
+		string $shortY = "default";
+		string $shortZ = "default";
+
+		$vtx = `filterExpand -sm 31 -ex true`;
+
+		if (size($vtx) == 1) {
+
+			$position = `xform -q -ws -t $vtx`;
+			// clamp to 3 decimal numbers
+			float $floatX = $position[0];
+			$floatX *= 1000;
+			$floatX = trunc($floatX);
+			$floatX /= 1000;
+			string $shortX = $floatX;
+			
+			float $floatY = $position[1];
+			$floatY *= 1000;
+			$floatY = trunc($floatY);
+			$floatY /= 1000;
+			string $shortY = $floatY;
+			
+			float $floatZ = $position[2];
+			$floatZ *= 1000;
+			$floatZ = trunc($floatZ);
+			$floatZ /= 1000;
+			string $shortZ = $floatZ;
+			
+			
+			$returnPos = "X: " + $shortX + "  " +
+						 "Y: " + $shortY+ "  " +
+						 "Z: " + $shortZ;
+			
+		}
+
+		// with multiple vertices, need to average max and min XYZ values
+		else if (size($vtx) > 1) {
+		
+			int $i = 0;
+			float $xArray[];
+			float $yArray[];
+			float $zArray[];
+			
+			for ($i = 0; $i < `size($vtx)`; $i++) {
+			
+				$curVtxPos = `xform -q -ws -t $vtx[$i]`;
+			
+				$xArray[$i] = $curVtxPos[0];
+				$yArray[$i] = $curVtxPos[1];
+				$zArray[$i] = $curVtxPos[2];
+			}
+			// $i can now be reused as size of array
+			$i--;
+			// get smallest and largest values and average
+			$xArray = `sort $xArray`;
+			$yArray = `sort $yArray`;
+			$zArray = `sort $zArray`;
+			
+			float $xMin = $xArray[0];	float $xMax = $xArray[$i];
+			float $yMin = $yArray[0];	float $yMax = $yArray[$i];
+			float $zMin = $zArray[0];	float $zMax = $zArray[$i];
+			
+			float $xAverage = ($xMin + $xMax) / 2;
+			float $yAverage = ($yMin + $yMax) / 2;
+			float $zAverage = ($zMin + $zMax) / 2;
+			
+			$position = {$xAverage, $yAverage, $zAverage};
+			// clamp to 3 decimal numbers
+			float $floatX = $position[0];
+			$floatX *= 1000;
+			$floatX = trunc($floatX);
+			$floatX /= 1000;
+			string $shortX = $floatX;
+			
+			float $floatY = $position[1];
+			$floatY *= 1000;
+			$floatY = trunc($floatY);
+			$floatY /= 1000;
+			string $shortY = $floatY;
+			
+			float $floatZ = $position[2];
+			$floatZ *= 1000;
+			$floatZ = trunc($floatZ);
+			$floatZ /= 1000;
+			string $shortZ = $floatZ;
+			
+			$returnPos = "X: " + $shortX + "  " +
+						 "Y: " + $shortY+ "  " +
+						 "Z: " + $shortZ;
+		}
+		
+	}
+
+	return $returnPos;
+}
+
+	
+proc createVtxPosHUD() 
+{
+	// find out which block is next empty in top left section
+	$block = `headsUpDisplay -nfb 5` + 1;
+
+	headsUpDisplay 	
+			-allowOverlap		true
+			-blockAlignment	"left"
+			-section        		5
+			-block          		$block
+			-blockSize      	"small"
+			-label         		"Vtx Position:"
+			-labelFontSize  	"small"
+			-dataFontSize		"small"
+			-command        	"aweVtxPos"
+			-attachToRefresh
+
+	HUDVtxPosition;
+}
+
+global proc aweVtxPosHUD() 
+{
+	if (`headsUpDisplay -ex HUDVtxPosition`) {
+		headsUpDisplay -rem HUDVtxPosition;
+		print("Removed Vertex Position HUD\n");
+	}	
+	else {
+		createVtxPosHUD;
+		print("Activated Vertex Position HUD\n");
+	}
+}

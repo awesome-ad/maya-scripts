@@ -1,0 +1,93 @@
+
+//-----------------------------
+// Description: 
+// Based on Maya's native TimeSliderMenu.mel (addInbetween, removeInbetween commands), this modified script allows you to
+// make Ripple Edits, i.e. insert or remove frames in an animation by shifting all keys following the current time. 
+// Depending on the value of $scope passed along with the command, you can opt to apply this effect merely to the currently 
+// selected object (i.e. animCurves), which is the standard Maya behaviour, or to ALL animCurves found within the scene, 
+// regardless whether an object is currently selected or not.
+//-----------------------------
+
+
+global proc aweRippleKeys( string $amount, string $mode, string $scope ) {
+
+
+	global string $gPlayBackSlider;
+	int $count = 1;
+	
+	if($amount == "single") {
+		$count = 1;
+	}
+	else {
+		string $btn = `promptDialog
+						-title "Ripple multiple frames"
+						-m "How many frames?"
+						-b "OK"
+						-b "Cancel"
+						-db "OK"
+						-cb "Cancel"
+						-ds "Cancel"
+						-st "integer"`;
+		if($btn == "OK") {
+			$count = (int) `promptDialog -q -text`;
+		}
+		else {
+			return;
+		}
+	}			
+	
+	string $cmd = "headsUpMessage -t 0.2 \"";
+		switch ($mode) {
+		
+			case "add":
+				$cmd = $cmd + ">> ripple >>\"; keyframe -time \"" + `currentTime -query` + ":\" " +
+					"-relative -timeChange " + $count + " -option over";
+				break;
+				
+			case "remove":
+				$cmd = $cmd + "<< ripple <<\"; keyframe -time \"" + `currentTime -query` + ":\" " +
+					"-relative -timeChange -" + $count + " -option over";
+				break;
+		}
+
+	if ($scope == "selection") {
+	
+		string $whichKeys = `timeControl -q -showKeys $gPlayBackSlider`;
+		if ($whichKeys == "none") {
+			return;
+		}
+
+		
+		if( $whichKeys != "active" ) {
+			string $curves[] = `timeControl -q -animCurveNames $gPlayBackSlider`;
+			if( size( $curves ) > 0 ) {
+				for( $curve in $curves ) {
+					$cmd = $cmd + " " + $curve;
+				}
+				eval $cmd;
+			}
+		} 
+		else {
+			string $members = expandSelectionConnection ("animationList");
+			if (($members == "") || ($members == "{}")) {
+				warning (uiRes("m_TimeSliderMenu.kNoObjectsEditWarn"));
+			}
+			else {
+				eval ($cmd + " " + $members);
+			}
+		}
+	}
+	
+	if ($scope == "scene") {
+		
+		string $aniCurves[] = `ls -type "animCurve"`;
+		
+		if (size($aniCurves) > 0 )  {
+			for ($curve in $aniCurves) {
+					$cmd = $cmd + " " + $curve;
+			}
+			eval($cmd);
+		}
+	}
+	
+}

@@ -1,0 +1,100 @@
+//----------------------------------------------
+// A script that allows the user to scrub the timeline by clicking
+// and dragging anywhere in the viewport.
+// Meant to be used with a hotkey.
+//----------------------------------------------
+
+// set up dragger
+global proc aweSDInit(string $context) {
+
+	// we need to pass some initial values; use global vars
+	global int $aweSDStartPoint;
+	global int $aweSDStepSize;
+	global int $aweSDStartTime;
+	global int $aweSDMode;
+
+	// at what screen coordinate did we start dragging?
+	float $anchorPoint[] = `draggerContext -q -ap $context`;
+	$aweSDStartPoint = (int) $anchorPoint[0];
+
+	// what panel are we using
+	$panel = `getPanel -wf`;
+	int $panelWidth;
+	if(`getPanel -to $panel` == "modelPanel") {
+		string $control = `modelPanel -q -control $panel`;
+		$panelWidth = `control -q -w $control`;
+	}
+	// if the focused panel is not a modelPanel, grab the first modelPanel you can find
+	else {
+		string $modelPanels[] = `getPanel -type "modelPanel"`;
+		string $control = `modelPanel -q -control $modelPanels[0]`;
+		$panelWidth = `control -q -w $control`; 
+	}
+
+	// divide the width by 2 so we can minimize the risk of the user running up 
+	// against screen boundaries while scrubbing
+	$panelWidth /= 2;
+
+	// calculate the stepsize according to the width of the panel
+	int $range = (`playbackOptions -q -max` - `playbackOptions -q -min`) + 1;
+
+	$aweSDStepSize = floor($panelWidth / $range);
+
+	// store at which time (frame) the context was called
+	$aweSDStartTime = `currentTime -q`;
+
+	// what button are we using?
+	$aweSDMode = `draggerContext -q -button $context`;
+
+}
+
+// define dragger functionality
+global proc aweSDDrag(string $context) {
+
+	global int $aweSDStartPoint;
+	global int $aweSDStepSize;
+	global int $aweSDStartTime;
+	global int $aweSDMode;
+
+	// do nothing with the right mouse button
+	if($aweSDMode == 3) {
+		return;
+	}
+
+	// get current screen coordinate
+	float $currentPoint[] = `draggerContext -q -dp $context`;
+	// calculate offset
+	int $pointOffset = $currentPoint[0] - $aweSDStartPoint;
+	// translate offset into frames
+	// since both are integers, result will be smallest whole number
+	int $timeOffset = ($pointOffset / $aweSDStepSize);
+
+	// set currentTime to initialTime + offset if within bounds
+	int $newTime = $aweSDStartTime + $timeOffset;
+	if( (`playbackOptions -q -min` <= $newTime)
+	&&	($newTime <= `playbackOptions -q -max`) ) {
+		int $update = 1;
+		if($aweSDMode == 2) $update = 0;
+		currentTime -u $update $newTime;
+	}
+
+	// sync the graph editor
+	animCurveEditor -e -lookAt currentTime graphEditor1GraphEd;
+}
+
+// create the dragger
+global proc aweSyncDragger() {
+
+	if(`contextInfo -exists aweSDContext`)
+		deleteUI aweSDContext;
+
+	$sdCtx = `draggerContext
+		-cursor "track"
+		-undoMode "sequence"
+	aweSDContext`;
+
+	draggerContext -e -pc ("aweSDInit(\""+$sdCtx+"\")") -dc ("aweSDDrag(\""+$sdCtx+"\")") $sdCtx;
+
+	setToolTo $sdCtx;
+
+}

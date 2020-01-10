@@ -1,0 +1,487 @@
+//----------------------------------------------
+// This script will analyze every Key in the scene and try to set its tangents in a senseful way (i.e. extreme keys will be set to flat, 
+// inbetweens to spline, etc.). The purpose is to provide a slightly easier transition from stepped mode to splines, avoiding the 
+// issues that occur when assigning a single tangent type (e.g. flat) to all keys in the scene.
+//---
+// Update: 
+// Obviously, with the introduction of AutoTangents in Maya 2012 this script has lost a lot of its usefulness to users with that version or higher.
+// If you're using Maya 2011 or lower then you might still find it useful. That said, it still offers some functions that can help you out either way.
+//----------------------------------------------
+
+global proc aweSmartTangents() {
+
+    if(`window -q -ex "aweSTUI"`) deleteUI -wnd "aweSTUI";
+   
+    $STwin = `window -title "Awesome SmartTangents"
+                -mnb 0 -mxb 0 -w 250 -h 100 -s 0
+                "aweSTUI"`;
+
+	columnLayout aweSTMasterLayout;
+	
+	$tabLayout = `tabLayout stTabs`;
+
+//-----  Tangents tab   -----//
+
+	columnLayout -adj 1 tangentTabLayout;
+	
+		frameLayout  -cll 1 -cl 1 -mh 7 -mw 7 -bv 0 -bgc 0.31 0.5 0.58 -label "Quick Convert" -ann "Convert all tangents in the scene";
+			columnLayout -rs 7 -adj 1 -cat "both" 7;
+				rowLayout  -nc 2 -adj 2 -cat 1 "right" 25;
+					checkBox -l "Selection" -ann "Limit to selected object(s)" "convertACSelectionCB";
+					checkBox -l "Timeline" -ann "Limit to time range from timeline" "convertACRangeCB";
+				setParent..; //to Column
+				rowLayout -nc 2 -adj 1 -cat 1 "right" 7;
+					button -w 150 -l "Stepped" -c "aweConvertAC(\"step\")";
+					picture -i "stepTangent.png";
+				setParent..; //to column
+				rowLayout -nc 2 -adj 1 -cat 1 "right" 7;		
+					button -w 150 -l "Spline" -c "aweConvertAC(\"spline\")";
+					picture -i "splineTangent.png";
+				setParent..; // to column
+				if(`getApplicationVersionAsFloat` >= 2012) {
+					rowLayout -nc 2 -adj 1 -cat 1 "right" 7;
+					button -w 150 -l "Auto" -c "aweConvertAC(\"auto\")";
+					picture  -i "autoTangent.png";
+					setParent..; // to column
+				}
+			setParent..;  //to frame
+		setParent..; // to top column
+		frameLayout -cll 0 -mh 7 -mw 7 -bv 0  -bgc 0.54 0.18 0.27 -label "Smart Tangent Settings";
+			columnLayout -rs 5;
+				checkBox -label "  Unlock weights of weighted tangents" "cbLockWeights";
+				checkBox -label "  Delete static channels (increases performance)" "cbDelStatic";
+				checkBox -label  "  Perform Euler filter on rotation channels" "cbDoEuler";
+			setParent ..; // to frame
+		setParent ..; // to top column
+		frameLayout  -cll 0 -mh 7 -mw 7 -bv 0 -bgc 0.54 0.18 0.27 -label "Tolerance settings";
+			text -l "Consider key values equal if difference lower than" -al "left" "textTolerance";
+			floatSliderGrp -width 50 -pre 2 -v 0.1 -min 0.01 -max 10.00 -fmn 0.01 -fmx 10.00 -f 1 -s 0.05 "editTolerance";
+		setParent ..; // to top column
+		separator -hr 1 -st "in";
+		$buttonLayout = `formLayout -nd 100`;
+			
+				$btn1 = `button -label "OK" -w 40 -c "aweDoSmartTangents"`;
+				$btn2 = `button -label "Cancel" -w 60 -c "deleteUI aweSTUI"`;
+				
+		formLayout -e -af $btn1 "top" 10 -af $btn1 "left" 7 -ac $btn2 "left" 10 $btn1 -af $btn2 "top" 10 -af $btn1 "bottom" 10 $buttonLayout;
+		setParent..; // to top column
+	setParent..; // to tab Layout
+
+//-----  Keys tab   -----//
+
+	columnLayout -adj 1 keyTabLayout;
+		
+		frameLayout  -cll 1 -cl 0 -mh 7 -mw 7 -bv 0  -bgc 0.54 0.18 0.27 -label "Manage Keys";
+			columnLayout -rs 7 -adj 1 -cat "both" 0;
+				text -l "Delete redundant keys from:" -al "left";
+				$scopeRB = `radioButtonGrp -nrb 3 -cat 1 "left" 0 -cw3 65 80 90 -la3 "Scene" "Selection" "Channel Box" -sl 1 delRKScopeRB`;
+				string $scopeCC = "if(`radioButtonGrp -q -sl delRKScopeRB` == 3) radioButtonGrp -e -enable 0 delRKModeRB; else radioButtonGrp -e -enable 1 delRKModeRB;";
+				radioButtonGrp -e -cc $scopeCC $scopeRB;
+				text -l "If other attributes on an object have non-redundant keys on the same frame:" -al "left" -ww 1;
+				radioButtonGrp -nrb 2 -cat 1 "left" 0 -cw2 80 70 -la2 "leave key" "delete key" -sl 2 delRKModeRB;
+				button -l "Delete redundant keys" -c "aweDelRK()";
+			setParent..; //to frameLayout
+		separator -style "in" -hr 1;
+		button -l "Delete static channels" -ann "Removes animation curves from attributes that don't ever change" -c "aweDeleteStatic";
+		setParent..; // to top column
+		frameLayout -cll 1 -cl 1 -mh 7 -mw 7 -bv 0 -bgc 0.54 0.18 0.27 -label "Cycle Options" -ann "Set infinity options for selected curves or all curves of selected object";
+			columnLayout -rs 7 -adj 1 -cat "both" 0;
+				rowLayout -nc 4 -cw4 30 70 70 70;
+					text -fn "boldLabelFont" -l "Pre" -w 40 -al "left";
+					button -w 70-l "Cycle" -c "setInfinity -pri \"cycle\"";
+					button -w 70 -l "Constant" -c "setInfinity -pri \"constant\"";
+					button -w 70 -l "Oscillate" -c "setInfinity -pri \"oscillate\"";
+				setParent..; //to columnLayout
+				separator -style "in" -hr 1;
+				rowLayout -nc 4 -cw4 40 70 70 70;
+					text -fn "boldLabelFont" -l "Post" -w 30 -al "left";
+					button -w 70 -l "Cycle" -c "setInfinity -poi \"cycle\"";
+					button -w 70 -l "Constant" -c "setInfinity -poi \"constant\"";
+					button -w 70 -l "Oscillate" -c "setInfinity -poi \"oscillate\"";
+				setParent..;//to columnLayout
+			setParent..; //to frameLayout
+		setParent..; //to top Column
+		setParent..; //to tabLayout;
+	setParent..; // to masterLayout
+	columnLayout -adj 1 -cat "both" 0;
+		progressBar -w 300 -m 0 aweSTProgressBar;
+			
+//-----
+	tabLayout -edit -tli 1 "Tangents" -tli 2 "Keys" $tabLayout;
+	    
+    showWindow $STwin;
+
+}
+
+global proc aweConvertAC(string $type) {
+	
+	// this filtering is necessary to avoid manipulating armask settings
+	$armFilter = `itemFilter -byName "armask*"`;
+	$curvesFilter = `itemFilter -byType "animCurve"`;
+	$masterCurveFilter = `itemFilter -di $curvesFilter $armFilter`;
+	
+	//check what objects to operate on
+	$selectionOnly = `checkBox -q -v convertACSelectionCB`;
+	$rangeOnly = `checkBox -q -v convertACRangeCB`;
+	
+	string $animCurves[];
+	
+	if($selectionOnly) {
+		$animCurves = `listConnections -type "animCurve"`;
+	}
+	else {
+		$animCurves = `lsThroughFilter $masterCurveFilter`;
+	}
+	
+	if(size($animCurves)) {
+	
+		for($curve in $animCurves) {
+			
+			//need to find out if this is an actual animation curve and NOT a driven key; the latter are of type animCurveU*
+			$nodeType = `nodeType $curve`;
+			if(startsWith($nodeType, "animCurveT")) {
+			string $range;
+				if($rangeOnly) {
+					$range = (`playbackOptions -q -min` + ":" + `playbackOptions -q -max`);
+				}
+				else {
+					$range = ":";
+				}
+				catchQuiet(`keyTangent -t $range -ott $type -itt $type $curve`);
+			}
+		}
+	}
+}
+
+
+
+global proc aweDoSmartTangents() {
+
+	if (!`window -q -ex "aweSTUI"`) {
+		
+		aweSmartTangents();
+		print "Please don't call this function directly; use the GUI instead! \n";
+	}
+	else {
+
+		//setup initial variables
+		int $doUnlock = `checkBox -q -v "cbLockWeights"`;
+		int $doEuler = `checkBox -q -v "cbDoEuler"`;
+		int $delStatic = `checkBox -q -v "cbDelStatic"`;
+		float $tolerance = `floatSliderGrp -q -v "editTolerance"`;
+		int $totalKeys = 0;
+		global string $gMainProgressBar;
+	
+		// this filtering is necessary to avoid manipulating armask settings and excludes driven key animCurves
+		$armFilter = `itemFilter -byName "armask*"`;
+		$curvesFilter = `itemFilter -bt "animCurveTA" -bt "animCurveTL" -bt "animCurveTT" -bt "animCurveTU"`;
+		$masterCurveFilter = `itemFilter -di $curvesFilter $armFilter`;
+		
+		//list all animCurves
+		string $animationCurves[] = `lsThroughFilter $masterCurveFilter`;
+		
+		if(size($animationCurves) > 0) {
+		
+			progressBar -e -bp -ii 1 -st "Applying Awesomeness to your tangents" -max `size($animationCurves)` $gMainProgressBar;
+
+			// loop through each Curve
+			for ($curve in $animationCurves) {
+			
+				if(`progressBar -q -ic $gMainProgressBar`) break;
+				
+				progressBar -e -s 1 -st ("Applying Awesomeness to your tangents on " + $curve) $gMainProgressBar;
+				
+				if($doEuler) {
+
+					if(gmatch($curve, "*_rotateX*") || gmatch($curve, "*_rotateY*") || gmatch($curve, "*_rotateZ*")) {
+						filterCurve -f "euler" $curve;
+					}
+				}		
+				
+				int $numKeys = `keyframe -q -kc $curve`;
+				
+				$totalKeys += $numKeys;
+				
+				//loop through each Key on the current Curve
+				for ($i = 0; $i < $numKeys; $i++) {
+				
+					//if it's the first key....
+					if ($i == 0) {
+						
+						$thisKey = 0;
+						$nextKey = 1;
+						
+						float $thisValue[] = `keyframe -in $thisKey -q -vc $curve`;
+						float $nextValue[] = `keyframe -in $nextKey -q -vc $curve`;
+						
+						//if key values are in range of 0.1 of one another, set first key's tangent to "flat", else to "spline"
+						if (equivalentTol($thisValue[0], $nextValue[0], $tolerance)) keyTangent -in $thisKey -e -itt "flat" -ott "flat" $curve;
+					   
+						else keyTangent -in $thisKey -e -itt "spline" -ott "spline" $curve;
+					}
+					
+					//if it's the last key...
+					else if ($i == ($numKeys - 1)) {
+					
+						$thisKey = $i;
+						$prevKey = $i - 1;
+				 
+						float $thisValue[] = `keyframe -in $thisKey -q -vc $curve`;
+						float $prevValue[] = `keyframe -in $prevKey -q -vc $curve`;
+						
+						
+						//if key values are in range of 0.1 of one another, set last  key's tangent to "flat", else to "spline"
+						if (equivalentTol($thisValue[0], $prevValue[0], $tolerance)) keyTangent -in $thisKey -e -itt "flat" -ott "flat" $curve;
+					   
+						else keyTangent -in $thisKey -e -itt "spline" -ott "spline" $curve;   
+					}   
+					
+					//if it's somewhere in the middle
+					else {
+					
+						$thisKey = $i;
+						$prevKey = $i - 1;
+						$nextKey = $i + 1;
+						
+					   float $thisValue[] = `keyframe -in $thisKey -q -vc $curve`;
+					   float $prevValue[] = `keyframe -in $prevKey -q -vc $curve`;
+					   float $nextValue[] = `keyframe -in $nextKey -q -vc $curve`;
+					   
+					   //if the Key is an extreme (larger or smaller than both the previous and next key), set it to "flat"
+					   if ( ($thisValue[0] > $prevValue[0] && $thisValue[0] > $nextValue[0]) || ($thisValue[0] < $prevValue[0] && $thisValue[0] < $nextValue[0]) ) {
+						   
+						   keyTangent -in $thisKey -e -itt "flat" -ott "flat" $curve;
+					   }
+					   
+					   //else if the Key is in range of 0.1 of either the previous or the next key (or both), set tangents to "flat"
+					   else if ( equivalentTol($thisValue[0], $prevValue[0], 0.1) || equivalentTol($thisValue[0], $nextValue[0], $tolerance) ) {
+					   
+						   keyTangent -in $thisKey -e -itt "flat" -ott "flat" $curve;
+					   }
+					   
+					   //if the above cases don't apply, this key is a classic inbetween and should be set to "spline"
+					   else {
+							keyTangent -in $thisKey -e -itt "spline" -ott "spline" $curve;
+					   }
+					}
+					
+			
+					//unlock tangents if user requested it
+					if ($doUnlock) {
+						keyTangent -in $i -e -wl 0 $curve;
+					}
+				
+				}
+			
+			
+			}
+			
+			//delete static channels if user requested it
+			if($delStatic) delete -all -sc;
+		
+			progressBar -e -ep $gMainProgressBar;
+			
+			string $returnString = "Successfully smartened " + $totalKeys + " keys on " + size($animationCurves) + " curves";
+			string $statusString = "";
+			string $stati[];
+			
+			
+			if($doUnlock) $stati[size($stati)] = "tangent weights unlocked";
+
+			if($doEuler) $stati[size($stati)] = "euler filter applied";
+			
+			if($delStatic) $stati[size($stati)] = "static channels deleted";
+
+			if(`size($stati)` > 0) $statusString = (" (" + stringArrayToString($stati, ", ") + ").");
+			else $statusString = ".";
+			
+			$returnString += ($statusString + " Awesome! \n");
+			print $returnString;
+		}
+		else {
+			print "There are no animation curves in the scene. Please do some awesome animation first! \n";
+		}
+		
+	deleteUI -wnd "aweSTUI";
+		
+	}
+}
+
+
+//--------------
+// Delete redundant keys functions
+//--------------
+
+//----- helper proc to filter a given node depending on whether it's a driven key animCurve (used in delRK)
+global proc int filterDrivenCurves(string $name) {
+		
+		$nodeType = `nodeType $name`;
+		if(startsWith($nodeType, "animCurveT"))
+			return 1;
+		else
+			return 0;
+}
+
+//------ here's the function that does all the work
+
+proc doDelRK(int $mode, int $scope) {
+
+	string $returnString = "";
+	int $keysDeleted = 0;
+	$pb = "aweSTProgressBar";
+	
+	progressBar -e -m 1 $pb;
+
+//--- first, get animCurves that match $scope (scene, selection, channelbox) and are not driven key curves	
+	
+	string $animCurves[];
+	
+	if ($scope == 1) {
+		$animCurves =  `ls -type animCurve`;
+	}
+	if ($scope == 2) {
+		$animCurves = `listConnections -type animCurve`;
+	}
+	if ($scope == 3) {
+		string $connectionList[];
+		$selObjects = `ls -sl`;
+		global string $gChannelBoxName;
+		$selAttr = `channelBox -q -sma $gChannelBoxName`;
+		for ($obj in $selObjects) {
+			for ($attr in $selAttr) {
+				$plug = ($obj + "." + $attr);
+				$connection = `listConnections -d 1 -type "animCurve" $plug`;
+				$animCurves[size($animCurves)] = $connection[0];
+			}
+		}
+	}
+	
+	$curveFilter = `itemFilter -bs "filterDrivenCurves"`;
+	
+	string $curves[];
+	
+	for($curve in $animCurves) {
+		
+		string $item[] = `lsThroughFilter -it $curve $curveFilter`;
+		if(size($item) > 0) $curves[size($curves)] = $item[0];
+	}
+	
+//---- 
+// now that we have our list of animCurves, do something with them according to $mode
+// the basic method here is to loop through the keys on a curve until the current key's value
+// matches that of the one before it. If that's the case, loop through the following keys until we
+// encounter a change in value. All keys up to this point are added to a to-be-deleted list.
+// if we haven't reached the end of the animation yet, proceed with step 1.
+// The most obvious method would be to simply compare each single key against the previous and next,
+// but this is inefficient as it introduces redundancies in the checking of key-triplets
+
+	if(`size($curves)`) {
+		
+		if($mode == 2)  {
+		
+		progressBar -e -pr 0 -min 0 -max `size($curves)` $pb;
+		
+			
+			for($curve in $curves) {
+			
+				progressBar -e -st 1 $pb;
+				//define array to hold redundant key indices
+				int $rIndex[];		
+				
+				$keyCount = `keyframe -q -kc $curve`;
+				
+				for ($i = 1; $i < $keyCount - 1; $i++) {
+				
+					$cVal = `keyframe -in $i -q -vc $curve`;
+					$pVal = `keyframe -in ($i -1) -q -vc $curve`;
+
+					
+					//if the current key matches the previous key
+					if($cVal[0] == $pVal[0]) {
+					
+						int $t = $i;
+						$c = $cVal;
+						$n =  `keyframe -in ($i+1) -q -vc $curve`;
+						
+						// as long as the next value keeps being the same as the current, and the one after that, etc.
+						// and we haven't reached the end of the animation curve, keep adding reduntant indices to array
+						while ( $c[0] == $n[0]) {
+						
+							$rIndex[size($rIndex)] = $t;
+							
+							//have we reached the end of the curve yet? If so, exit while loop
+							if ($t >= $keyCount - 2) {
+								break;
+							}
+							
+							//only if $t is the next-to-last index on the curve, else $t + 2 index would throw an out of range error
+							$c = `keyframe -in ($t+1) -q -vc $curve`;
+							$n = `keyframe -in ($t+2) -q -vc $curve`;
+							$t++;
+						}
+
+					
+						// after the while loop, continue at the next key of which we don't know whether it matches its predecessor
+						// $i should be $t + 2, but the for loop will increase it automatically at the end of the statement chain
+						 $i = $t+1;	
+					} // end if current=previous
+				
+				} // end index for-loop
+				
+				//now delete the gathered keys
+				string $delCmd = "cutKey";
+				if(size($rIndex)) {
+					for ($f = 0; $f < size($rIndex); $f++) {
+						$delCmd = ($delCmd + " -in " + $rIndex[$f]);
+					}
+					$delCmd = ($delCmd + " -clear " + $curve);
+					eval($delCmd);
+				}
+				
+				//add number of deleted keys for the return string
+				$keysDeleted += `size($rIndex)`;
+				
+				//now empty the index array for the next loop iteration
+				clear $rIndex;
+			
+			} // end curve  for-loop
+		
+		} // end if mode=2
+
+		$returnString = ("Cleaned up " + $keysDeleted + " redundant keys. Awesome!");
+		print ($returnString + "\n");
+		progressBar -e -m 0 -pr 0 $pb;
+	}
+	else {
+		print("There are no animation curves to operate on\n");
+	}
+}
+
+
+//--- this is the function that gets called from the GUI
+
+global proc aweDelRK() {
+	
+	//only run this proc from the GUI
+	if(`window -q -ex aweSTUI`) {
+		
+		int $scope = `radioButtonGrp -q -sl delRKScopeRB`;
+		int $mode;
+		
+		// the mode is only relevant if scope is set to "scene" or "selection"; 
+		// always set mode = 2 if we're taking animCurves from channelBox
+		if($scope < 3) {
+			$mode = `radioButtonGrp -q -sl delRKModeRB`;
+		}
+		else {
+			$mode = 2;
+		}
+		// now call the actual function
+		doDelRK($mode, $scope);
+	}
+
+}
+
+global proc aweDeleteStatic() {
+	delete -sc -uac 0 -hi "none" -cp 0 -s 1;
+}
