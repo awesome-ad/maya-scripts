@@ -1,4 +1,6 @@
-"""This script playblasts the current scene and sends it through RVIO for viewing in RV."""
+"""This script playblasts the current scene and sends it through RVIO for viewing in RV.
+Requires frameburn.mu
+"""
 
 import subprocess as sp
 import maya.cmds as cmds
