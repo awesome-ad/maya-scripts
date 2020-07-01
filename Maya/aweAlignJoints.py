@@ -67,6 +67,7 @@ def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflect=False):
     rootPos = om.MVector(cmds.xform(root, q=True, ws=True, t=True))
     midPos = om.MVector(cmds.xform(mid, q=True, ws=True, t=True))
     endPos = om.MVector(cmds.xform(end, q=True, ws=True, t=True))
+    endMtx = om.MMatrix(cmds.getAttr(end + ".worldMatrix"))
     
     root2mid = midPos - rootPos
     mid2end = endPos - midPos
@@ -98,8 +99,13 @@ def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflect=False):
         midRot = midRot.alternateSolution()
     cmds.setAttr(mid + ".jo", math.degrees(midRot.x), math.degrees(midRot.y), math.degrees(midRot.z), type="double3")
     
-    # third joint has probably moved; reset its position but otherwise don't change it
+    # reset third joint to its original world space position and orientation
     cmds.xform(end, ws=True, t=[endPos.x, endPos.y, endPos.z])
+    cmds.xform(end, os=True, ro=[0, 0, 0])
+    endParentMtx = om.MMatrix(cmds.getAttr(end + ".pim"))
+    endMtx *= endParentMtx
+    endRot = om.MTransformationMatrix(endMtx).rotation()
+    cmds.setAttr(end + ".jo", math.degrees(endRot.x), math.degrees(endRot.y), math.degrees(endRot.z), type="double3")
 
 
 def main_window():
