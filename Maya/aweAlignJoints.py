@@ -2,11 +2,17 @@
 aweAlignJoints.py
 Author: AwesomeAD
 
-Aligns 3 selected joints to the implicit plane on which they lie.
+Align three selected joints to the implicit plane on which they lie.
+
+While the Orient Joint tool (joint command) allows us to orient a secondary axis to a
+normal of the plane of its parent and child by omitting the secondary axis, it is not
+possible to choose which of two normals, nor does it guarantee clean orientations.
+This tool rectifies that by allowing the choice of normal and ensuring that the
+middle joint (in a hierarchy) will have an orientation in the secondary axis only.
 
 Usage in Maya:
->> import aweAlignJoints
->> aweAlignJoints.align()
+import aweAlignJoints
+aweAlignJoints.align()
 """
 
 
@@ -42,8 +48,8 @@ def buildMatrix(aimVector, normalVector, primary, secondary):
     mList = [a for row in rowList for a in row]
     mList.extend(tRow)
     mtx = om.MMatrix(mList)
-    # ensure the handedness of our matrix doesn't cause the aim axis to be reflected
-    # a negative determinant will cause the third axis to flip to rectify this
+    # a left-handed matrix will cause the aim axis to be reflected when decomposed;
+    # multiplying with a negative determinant flips the third axis to rectify this
     det = mtx.det3x3()
     for i in range(3):
         mtx.setElement(order[2], i, thirdRow[i] * det)
@@ -87,7 +93,7 @@ def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflect=False):
     midRot = om.MTransformationMatrix(midMtx).rotation()
     # if the computed rotation is such that it requires rotation around all 3 axes,
     # use the alternate solution. Only relevant if mid is a direct child of root (and
-    # hence a rotation around its normal axis would suffice)
+    # hence a rotation around its secondary axis would suffice)
     if all(map(lambda x: abs(x) >= 1e-08, midRot)):
         midRot = midRot.alternateSolution()
     cmds.setAttr(mid + ".jo", math.degrees(midRot.x), math.degrees(midRot.y), math.degrees(midRot.z), type="double3")
