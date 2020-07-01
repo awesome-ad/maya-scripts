@@ -85,6 +85,11 @@ def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflect=False):
     midParentMtx = om.MMatrix(cmds.getAttr(mid + ".pim"))
     midMtx *= midParentMtx
     midRot = om.MTransformationMatrix(midMtx).rotation()
+    # if the computed rotation is such that it requires rotation around all 3 axes,
+    # use the alternate solution. Only relevant if mid is a direct child of root (and
+    # hence a rotation around its normal axis would suffice)
+    if all(map(lambda x: abs(x) >= 1e-08, midRot)):
+        midRot = midRot.alternateSolution()
     cmds.setAttr(mid + ".jo", math.degrees(midRot.x), math.degrees(midRot.y), math.degrees(midRot.z), type="double3")
     
     # third joint has probably moved; reset its position but otherwise don't change it
