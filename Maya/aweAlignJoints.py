@@ -6,7 +6,7 @@ Align three selected joints to the implicit plane on which they lie.
 
 While the Orient Joint tool (joint command) allows us to orient a secondary axis to a
 normal of the plane of its parent and child by omitting the secondary axis, it is not
-possible to choose which of two normals, nor does it guarantee clean orientations.
+possible to choose between the two normals, nor does it guarantee clean orientations.
 This tool rectifies that by allowing the choice of normal and ensuring that the
 middle joint (in a hierarchy) will have an orientation in the secondary axis only.
 
@@ -56,7 +56,7 @@ def buildMatrix(aimVector, normalVector, primary, secondary):
     return mtx
 
 
-def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflect=False):
+def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflectPrimary=False, reflectSecondary=False):
     """ Orient 3 joints to the plane they form.
 
         `primaryAxis`: axis to point at the next joint (0=X, 1=Y, 2=Z)
@@ -73,7 +73,10 @@ def planeJoints(root, mid, end, primaryAxis, secondaryAxis, reflect=False):
     mid2end = endPos - midPos
     root2end = endPos - rootPos
     normal = root2end ^ root2mid
-    if reflect:
+    if reflectPrimary:
+        root2mid *= -1
+        mid2end *= -1
+    if reflectSecondary:
         normal *= -1
     
     # reset rotations to 0, create appropriate object space rotation matrix, apply rotation to jointOrient
@@ -153,6 +156,9 @@ class aweAlignWidget(QtWidgets.QDialog):
         primaryButtonsLayout.addWidget(self.pY)
         primaryButtonsLayout.addWidget(self.pZ)
         primaryLayout.addStretch(1)
+        primaryLayout.addSpacing(10)
+        self.reversePrimary = QtWidgets.QCheckBox("Reverse")
+        primaryLayout.addWidget(self.reversePrimary)
         
         secondaryLayout = QtWidgets.QVBoxLayout()
         axisLayout.addLayout(secondaryLayout)
@@ -171,8 +177,8 @@ class aweAlignWidget(QtWidgets.QDialog):
         secondaryButtonsLayout.addWidget(self.sY)
         secondaryButtonsLayout.addWidget(self.sZ)
         secondaryLayout.addSpacing(10)
-        self.reverseBtn = QtWidgets.QCheckBox("Reverse")
-        secondaryLayout.addWidget(self.reverseBtn)
+        self.reverseSecondary = QtWidgets.QCheckBox("Reverse")
+        secondaryLayout.addWidget(self.reverseSecondary)
         self.pX.setChecked(True)
         self.sY.setChecked(True)
                                 
@@ -207,11 +213,12 @@ class aweAlignWidget(QtWidgets.QDialog):
     def doAlign(self):
         pAxis = self.pGroup.checkedId()
         sAxis = self.sGroup.checkedId()
-        reflect = self.reverseBtn.isChecked()
+        reflectPrimary = self.reversePrimary.isChecked()
+        reflectSecondary = self.reverseSecondary.isChecked()
         sel = cmds.ls(sl=True, l=True, tr=True)
         if len(sel) == 3:
             root, mid, end = sel
-            planeJoints(root, mid, end, pAxis, sAxis, reflect)
+            planeJoints(root, mid, end, pAxis, sAxis, reflectPrimary, reflectSecondary)
         else:
             cmds.warning("Please select 3 joints")
 
